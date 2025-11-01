@@ -1,0 +1,736 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Pharmaceutical Patent Report</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Warm Neutrals -->
+    <!-- Application Structure Plan: The SPA is designed with a top-level tabbed navigation to switch between three distinct views: 'Dashboard', 'Timeline', and 'Competitor Focus'. This structure was chosen over a single, long page to allow users to explore the data from different perspectives based on their goals, enhancing usability. The 'Dashboard' provides a high-level quantitative summary. The 'Timeline' organizes information chronologically, answering "what happens when?". The 'Competitor Focus' view organizes by company, answering "who is doing what?". This task-oriented design allows users to quickly find relevant insights without scrolling through unrelated information. Clicking on any drug card provides a consistent, detailed modal view, creating a predictable user flow. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Aggregate drug counts by year -> Goal: Show proportions -> Viz: Donut Chart -> Interaction: Hover tooltips -> Justification: Easily compare the volume of expiries each year. -> Library: Chart.js.
+        - Report Info: Count of competitor mentions -> Goal: Compare/Rank -> Viz: Horizontal Bar Chart -> Interaction: Hover tooltips -> Justification: Clearly identifies the most active potential competitors. -> Library: Chart.js.
+        - Report Info: List of all drugs -> Goal: Organize/Explore -> Presentation: Interactive HTML Cards -> Interaction: Filter by search, click to view details in a modal -> Justification: Provides a scannable overview with an unobtrusive method for deep dives. -> Method: Vanilla JS DOM manipulation.
+        - Report Info: Detailed drug analysis and competitors -> Goal: Inform -> Presentation: Modal Window -> Interaction: Opened on click, closed with a button -> Justification: Presents detailed text without cluttering the main interface. -> Method: Vanilla JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container { position: relative; width: 100%; max-width: 500px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .nav-active { border-color: #3b82f6; color: #3b82f6; }
+        .nav-inactive { border-color: transparent; color: #4b5563; }
+        .modal-bg { background-color: rgba(0,0,0,0.5); }
+    </style>
+</head>
+<body class="bg-stone-50 text-stone-800">
+
+    <div id="app" class="container mx-auto p-4 sm:p-6 lg:p-8">
+
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-stone-900">Pharmaceutical Patent Expiry Analysis</h1>
+            <p class="mt-2 text-stone-600">An interactive report on major drugs with patents expiring from 2025 to 2037 and their potential competitors.</p>
+            <div class="mt-6 flex flex-col sm:flex-row justify-center items-center gap-4">
+                <button id="add-new-btn" class="bg-blue-500 text-white font-semibold px-5 py-2 rounded-lg hover:bg-blue-600 transition-colors shadow w-full sm:w-auto">
+                    &#43; Add New Entry
+                </button>
+                <div class="relative w-full sm:w-72">
+                    <input type="search" id="search-input" placeholder="Search report..." class="pl-10 pr-4 py-2 border border-stone-300 rounded-lg w-full shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <svg class="w-5 h-5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" />
+                    </svg>                      
+                </div>
+            </div>
+        </header>
+
+        <nav class="mb-8 flex justify-center border-b border-stone-200">
+            <button data-view="dashboard" class="nav-tab nav-active text-sm sm:text-base font-medium py-3 px-4 sm:px-6 border-b-2 transition-colors duration-200">Dashboard</button>
+            <button data-view="timeline" class="nav-tab nav-inactive text-sm sm:text-base font-medium py-3 px-4 sm:px-6 border-b-2 transition-colors duration-200">Timeline</button>
+            <button data-view="competitors" class="nav-tab nav-inactive text-sm sm:text-base font-medium py-3 px-4 sm:px-6 border-b-2 transition-colors duration-200">Competitor Focus</button>
+        </nav>
+
+        <main id="app-content">
+            <section id="dashboard-view" class="view space-y-8">
+                <div class="text-center">
+                    <h2 class="text-2xl font-semibold text-stone-800">Market Overview</h2>
+                    <p class="mt-1 text-stone-500">A high-level look at the upcoming patent expiry landscape.</p>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                    <div id="kpi-drugs" class="bg-white p-5 rounded-xl shadow-sm text-center"></div>
+                    <div id="kpi-competitors" class="bg-white p-5 rounded-xl shadow-sm text-center"></div>
+                    <div id="kpi-generics" class="bg-white p-5 rounded-xl shadow-sm text-center"></div>
+                    <div id="kpi-biosimilars" class="bg-white p-5 rounded-xl shadow-sm text-center"></div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4">
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="text-lg font-semibold text-center text-stone-700 mb-4">Expiries by Year</h3>
+                        <div class="chart-container">
+                            <canvas id="expiriesByYearChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-xl shadow-sm">
+                        <h3 class="text-lg font-semibold text-center text-stone-700 mb-4">Top Potential Competitors</h3>
+                        <div class="chart-container">
+                            <canvas id="topCompetitorsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="timeline-view" class="view hidden space-y-8">
+                <div class="text-center">
+                    <h2 class="text-2xl font-semibold text-stone-800">Expiry Timeline</h2>
+                    <p class="mt-1 text-stone-500">Explore which drug patents are expiring each year. Select a year to see the details.</p>
+                </div>
+                <div id="timeline-selector" class="flex justify-center gap-2 sm:gap-4 bg-stone-100 p-2 rounded-lg flex-wrap"></div>
+                <div id="timeline-content" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6"></div>
+            </section>
+            
+            <section id="competitors-view" class="view hidden space-y-8">
+                 <div class="text-center">
+                    <h2 class="text-2xl font-semibold text-stone-800">Competitor Focus</h2>
+                    <p class="mt-1 text-stone-500">Analyze potential market entrants and the products they are targeting.</p>
+                </div>
+                <div>
+                    <label for="competitor-select" class="block text-sm font-medium text-stone-600 mb-2">Select a Competitor:</label>
+                    <select id="competitor-select" class="w-full max-w-md p-2 border border-stone-300 rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></select>
+                </div>
+                <div id="competitor-content"></div>
+            </section>
+        </main>
+    </div>
+    
+    <div id="modal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 modal-bg transition-opacity duration-300">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div id="modal-content" class="p-6 sm:p-8"></div>
+        </div>
+    </div>
+
+<script>
+const ORIGINAL_DB = {
+    drugs: [
+        {
+            year: 2025,
+            brand: "Xarelto",
+            ingredient: "Rivaroxaban",
+            type: "Generic",
+            indication: "Stroke prevention, Deep Vein Thrombosis (DVT)",
+            analysis: "As a widely prescribed oral anticoagulant, Xarelto is a prime target for generic competition. Numerous companies have already filed Abbreviated New Drug Applications (ANDAs) and are involved in patent litigation.",
+            potentialMakers: ["Viatris (Mylan)", "Teva Pharmaceuticals", "Sandoz (Novartis)", "Aurobindo Pharma", "Sun Pharma", "Dr. Reddy's Laboratories"]
+        },
+        {
+            year: 2025,
+            brand: "Entresto",
+            ingredient: "Sacubitril/valsartan",
+            type: "Generic",
+            indication: "Chronic heart failure",
+            analysis: "A blockbuster heart failure medication, Entresto has seen significant patent litigation from multiple generic filers.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)"]
+        },
+        {
+            year: 2025,
+            brand: "Farxiga",
+            ingredient: "Dapagliflozin",
+            type: "Generic",
+            indication: "Type 2 diabetes, heart failure, Chronic Kidney Disease (CKD)",
+            analysis: "The SGLT2 inhibitor class is a high-growth area. Farxiga's multiple indications make it a very attractive target for generic manufacturers.",
+            potentialMakers: ["Sandoz (Novartis)", "Zydus Lifesciences", "Sun Pharma", "Viatris (Mylan)"]
+        },
+        {
+            year: 2025,
+            brand: "Ocrevus",
+            ingredient: "Ocrelizumab",
+            type: "Biosimilar",
+            indication: "Multiple sclerosis",
+            analysis: "Ocrevus is a biologic (monoclonal antibody), so competitors will be developing biosimilars, not generics. The development and approval process for biosimilars is more complex and costly.",
+            potentialMakers: ["Sandoz (Novartis)", "Celltrion", "Samsung Bioepis"]
+        },
+        {
+            year: 2026,
+            brand: "Eliquis",
+            ingredient: "Apixaban",
+            type: "Generic",
+            indication: "Stroke prevention, atrial fibrillation",
+            analysis: "As the top-selling drug on this list by a significant margin, Eliquis will face intense competition from the moment its patents expire. Several companies have already secured tentative FDA approvals.",
+            potentialMakers: ["Viatris (Mylan)", "Aurobindo Pharma", "Teva Pharmaceuticals", "BMS/Pfizer (Original Makers)"]
+        },
+        {
+            year: 2027,
+            brand: "Tecentriq",
+            ingredient: "Atezolizumab",
+            type: "Biosimilar",
+            indication: "Various cancers",
+            analysis: "Like Ocrevus, Tecentriq is a biologic (a checkpoint inhibitor for cancer immunotherapy). Companies with strong oncology and biosimilar programs will be the main contenders.",
+            potentialMakers: ["Amgen", "Sandoz (Novartis)", "Pfizer"]
+        },
+        {
+            year: 2027,
+            brand: "Xtandi",
+            ingredient: "Enzalutamide",
+            type: "Generic",
+            indication: "Prostate cancer",
+            analysis: "A widely used oral oncology drug, making it a valuable target for experienced generic manufacturers.",
+            potentialMakers: ["Viatris (Mylan)", "Dr. Reddy's Laboratories", "Sun Pharma"]
+        },
+        {
+            year: 2027,
+            brand: "Imbruvica",
+            ingredient: "Ibrutinib",
+            type: "Generic",
+            indication: "Blood cancers",
+            analysis: "A first-in-class BTK inhibitor, Imbruvica is another high-value oral oncology drug that has attracted significant attention from generic companies.",
+            potentialMakers: ["Dr. Reddy's Laboratories", "Aurobindo Pharma", "Teva Pharmaceuticals"]
+        },
+        {
+            year: 2028,
+            brand: "Keytruda",
+            ingredient: "Pembrolizumab",
+            type: "Biosimilar",
+            indication: "Various cancers",
+            analysis: "A leading PD-1 inhibitor, Keytruda's patent expiry will open up a massive market for biosimilar competition from major players in oncology.",
+            potentialMakers: ["Amgen", "Sandoz (Novartis)", "Pfizer", "Samsung Bioepis", "Celltrion"]
+        },
+        {
+            year: 2028,
+            brand: "Opdivo",
+            ingredient: "Nivolumab",
+            type: "Biosimilar",
+            indication: "Various cancers",
+            analysis: "Another major checkpoint inhibitor, Opdivo will be a key target for biosimilar developers focusing on the lucrative immuno-oncology space.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen", "Celltrion", "Boehringer Ingelheim"]
+        },
+        {
+            year: 2028,
+            brand: "Gardasil 9",
+            ingredient: "HPV L1 proteins",
+            type: "Biosimilar",
+            indication: "HPV vaccine",
+            analysis: "As a blockbuster vaccine, Gardasil 9's patent expiration will attract companies with expertise in recombinant protein production and vaccine development.",
+            potentialMakers: ["Merck (Original Makers)", "GSK", "Sanofi"]
+        },
+        {
+            year: 2029,
+            brand: "Darzalex",
+            ingredient: "Daratumumab",
+            type: "Biosimilar",
+            indication: "Multiple myeloma",
+            analysis: "A key biologic for treating multiple myeloma, Darzalex will face biosimilar competition from a strong hematology/oncology portfolio.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen", "Pfizer"]
+        },
+        {
+            year: 2029,
+            brand: "Cosentyx",
+            ingredient: "Secukinumab",
+            type: "Biosimilar",
+            indication: "Psoriasis, ankylosing spondylitis",
+            analysis: "A popular IL-17A inhibitor, Cosentyx is a major target in the immunology space for biosimilar manufacturers.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen", "AbbVie", "Samsung Bioepis"]
+        },
+        {
+            year: 2029,
+            brand: "Enbrel",
+            ingredient: "Etanercept",
+            type: "Biosimilar",
+            indication: "Rheumatoid arthritis, psoriasis",
+            analysis: "One of the earliest blockbuster biologics, Enbrel already has biosimilars in other regions, and more are expected upon US patent expiry.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen (Original Makers)", "Samsung Bioepis"]
+        },
+        {
+            year: 2031,
+            brand: "Dupixent",
+            ingredient: "Dupilumab",
+            type: "Biosimilar",
+            indication: "Atopic dermatitis, asthma, eczema",
+            analysis: "A first-in-class biologic for atopic dermatitis, Dupixent's expiry will be a significant event in the immunology market.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen", "Teva Pharmaceuticals"]
+        },
+        {
+            year: 2032,
+            brand: "Ozempic",
+            ingredient: "Semaglutide",
+            type: "Generic",
+            indication: "Type 2 diabetes, weight management",
+            analysis: "A hugely successful GLP-1 agonist, Ozempic will face intense generic competition due to its massive market size in diabetes and weight management.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)", "Sandoz (Novartis)", "Dr. Reddy's Laboratories"]
+        },
+        {
+            year: 2032,
+            brand: "Tagrisso",
+            ingredient: "Osimertinib",
+            type: "Generic",
+            indication: "Lung cancer",
+            analysis: "A leading targeted therapy for lung cancer, Tagrisso is a high-value target for generic companies specializing in oncology.",
+            potentialMakers: ["Teva Pharmaceuticals", "Sun Pharma", "Dr. Reddy's Laboratories", "Zydus Lifesciences"]
+        },
+        {
+            year: 2032,
+            brand: "Entyvio",
+            ingredient: "Vedolizumab",
+            type: "Biosimilar",
+            indication: "Inflammatory bowel disease",
+            analysis: "A gut-selective biologic for IBD, Entyvio will attract biosimilar developers focused on gastroenterology and immunology.",
+            potentialMakers: ["Sandoz (Novartis)", "Pfizer", "Celltrion", "Amgen"]
+        },
+        {
+            year: 2033,
+            brand: "Biktarvy",
+            ingredient: "Bictegravir/emtricitabine/tenofovir",
+            type: "Generic",
+            indication: "HIV",
+            analysis: "As a leading single-tablet HIV regimen, Biktarvy will be a key target for generic manufacturers with expertise in antiretroviral drugs.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)", "Aurobindo Pharma", "Gilead (Original Makers)"]
+        },
+        {
+            year: 2033,
+            brand: "Skyrizi",
+            ingredient: "Risankizumab-rzaa",
+            type: "Biosimilar",
+            indication: "Psoriasis, Crohn’s disease",
+            analysis: "An IL-23 inhibitor that has shown strong performance, Skyrizi is a major pipeline target for immunology-focused biosimilar companies.",
+            potentialMakers: ["Sandoz (Novartis)", "Amgen", "Boehringer Ingelheim", "Samsung Bioepis"]
+        },
+        {
+            year: 2033,
+            brand: "Prevnar 20",
+            ingredient: "Pneumococcal polysaccharides",
+            type: "Biosimilar",
+            indication: "Pneumococcal vaccine",
+            analysis: "The next generation of pneumococcal vaccines, Prevnar 20 will see competition from other major vaccine manufacturers.",
+            potentialMakers: ["GSK", "Merck", "Pfizer (Original Makers)"]
+        },
+        {
+            year: 2033,
+            brand: "Rinvoq",
+            ingredient: "Upadacitinib",
+            type: "Generic",
+            indication: "Rheumatoid arthritis, atopic dermatitis",
+            analysis: "As a leading JAK inhibitor, Rinvoq is an important oral immunology drug and a target for generic competition.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)", "Sun Pharma", "Sandoz (Novartis)"]
+        },
+        {
+            year: 2036,
+            brand: "Mounjaro",
+            ingredient: "Tirzepatide",
+            type: "Generic",
+            indication: "Type 2 diabetes, weight management",
+            analysis: "A dual GIP/GLP-1 agonist with massive market potential, Mounjaro will be one of the most significant generic targets of the decade.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)", "Sandoz (Novartis)", "Eli Lilly (Original Makers)"]
+        },
+        {
+            year: 2037,
+            brand: "Trikafta",
+            ingredient: "Elexacaftor/tezacaftor/ivacaftor",
+            type: "Generic",
+            indication: "Cystic fibrosis",
+            analysis: "A transformative therapy for cystic fibrosis, this combination drug is a highly complex but valuable target for specialized generic manufacturers.",
+            potentialMakers: ["Teva Pharmaceuticals", "Viatris (Mylan)", "Vertex (Original Makers)"]
+        }
+    ]
+};
+
+let AppData = {
+    drugs: []
+};
+
+const AppState = {
+    currentView: 'dashboard',
+    charts: {}
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+    init();
+});
+
+function init() {
+    AppData.drugs = [...ORIGINAL_DB.drugs];
+    setupNavigation();
+    setupControls();
+    rerender();
+}
+
+function rerender() {
+    renderDashboard();
+    renderTimeline();
+    renderCompetitors();
+    updateView(); 
+}
+
+function setupControls() {
+    document.getElementById('add-new-btn').addEventListener('click', () => showModal(null, 'form'));
+    document.getElementById('search-input').addEventListener('input', handleSearch);
+}
+
+function handleSearch() {
+    const term = document.getElementById('search-input').value.toLowerCase();
+    AppData.drugs = ORIGINAL_DB.drugs.filter(drug => 
+        drug.brand.toLowerCase().includes(term) ||
+        drug.ingredient.toLowerCase().includes(term) ||
+        drug.indication.toLowerCase().includes(term) ||
+        drug.potentialMakers.some(maker => maker.toLowerCase().includes(term))
+    );
+    rerender();
+}
+
+function setupNavigation() {
+    const navTabs = document.querySelectorAll('.nav-tab');
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            AppState.currentView = e.target.dataset.view;
+            updateView();
+        });
+    });
+}
+
+function updateView() {
+    document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+    const currentViewEl = document.getElementById(`${AppState.currentView}-view`);
+    if(currentViewEl) currentViewEl.classList.remove('hidden');
+
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.classList.remove('nav-active', 'nav-inactive');
+        if (tab.dataset.view === AppState.currentView) {
+            tab.classList.add('nav-active');
+        } else {
+            tab.classList.add('nav-inactive');
+        }
+    });
+    
+    if (AppState.currentView === 'timeline') {
+        const firstYearBtn = document.querySelector('.timeline-year-btn');
+        if (firstYearBtn) {
+           renderTimelineContent(firstYearBtn.dataset.year);
+           document.querySelectorAll('.timeline-year-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-500', 'text-white');
+                btn.classList.add('bg-white', 'text-stone-600', 'hover:bg-blue-100');
+            });
+            firstYearBtn.classList.add('bg-blue-500', 'text-white');
+        } else {
+             document.getElementById('timeline-content').innerHTML = '<p class="text-center text-stone-500 col-span-full">No entries found for this timeline.</p>';
+        }
+    } else if (AppState.currentView === 'competitors') {
+        const competitorSelect = document.getElementById('competitor-select');
+        if (competitorSelect.options.length > 0) {
+            renderCompetitorContent(competitorSelect.value);
+        } else {
+            document.getElementById('competitor-content').innerHTML = '<p class="text-center text-stone-500">No competitors found.</p>';
+        }
+    }
+    
+    window.scrollTo(0, 0);
+}
+
+function renderDashboard() {
+    const allCompetitors = new Set(AppData.drugs.flatMap(d => d.potentialMakers));
+    document.getElementById('kpi-drugs').innerHTML = `<h3 class="text-3xl font-bold text-blue-600">${AppData.drugs.length}</h3><p class="text-stone-500 mt-1">Drugs Found</p>`;
+    document.getElementById('kpi-competitors').innerHTML = `<h3 class="text-3xl font-bold text-blue-600">${allCompetitors.size}</h3><p class="text-stone-500 mt-1">Potential Competitors</p>`;
+    document.getElementById('kpi-generics').innerHTML = `<h3 class="text-3xl font-bold text-blue-600">${AppData.drugs.filter(d => d.type === 'Generic').length}</h3><p class="text-stone-500 mt-1">Generic Targets</p>`;
+    document.getElementById('kpi-biosimilars').innerHTML = `<h3 class="text-3xl font-bold text-blue-600">${AppData.drugs.filter(d => d.type === 'Biosimilar').length}</h3><p class="text-stone-500 mt-1">Biosimilar Targets</p>`;
+    renderExpiriesByYearChart();
+    renderTopCompetitorsChart();
+}
+
+function renderExpiriesByYearChart() {
+    const ctx = document.getElementById('expiriesByYearChart').getContext('2d');
+    const yearCounts = AppData.drugs.reduce((acc, drug) => {
+        acc[drug.year] = (acc[drug.year] || 0) + 1;
+        return acc;
+    }, {});
+
+    if (AppState.charts.expiries) AppState.charts.expiries.destroy();
+    AppState.charts.expiries = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(yearCounts).length > 0 ? Object.keys(yearCounts) : ['No Data'],
+            datasets: [{
+                data: Object.keys(yearCounts).length > 0 ? Object.values(yearCounts) : [1],
+                backgroundColor: Object.keys(yearCounts).length > 0 ? ['#60a5fa', '#facc15', '#fb923c', '#4ade80', '#a78bfa', '#f87171', '#2dd4bf', '#fbbf24', '#93c5fd', '#c084fc'] : ['#e5e7eb'],
+                borderColor: '#ffffff',
+                borderWidth: 4,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                             if (context.label === 'No Data') return 'No data to display';
+                            let label = context.label || '';
+                            let value = context.raw;
+                            return `${label}: ${value} drug(s)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderTopCompetitorsChart() {
+    const ctx = document.getElementById('topCompetitorsChart').getContext('2d');
+    const competitorCounts = AppData.drugs.flatMap(d => d.potentialMakers).reduce((acc, maker) => {
+        acc[maker] = (acc[maker] || 0) + 1;
+        return acc;
+    }, {});
+
+    const sortedCompetitors = Object.entries(competitorCounts).sort(([, a], [, b]) => b - a).slice(0, 7);
+
+    if (AppState.charts.competitors) AppState.charts.competitors.destroy();
+    AppState.charts.competitors = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedCompetitors.length > 0 ? sortedCompetitors.map(c => c[0]) : ['No Data'],
+            datasets: [{
+                label: 'Number of Targeted Drugs',
+                data: sortedCompetitors.length > 0 ? sortedCompetitors.map(c => c[1]) : [0],
+                backgroundColor: '#a5b4fc',
+                borderColor: '#6366f1',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            if (context.label === 'No Data') return 'No data to display';
+                            return `Targeting ${context.raw} drug(s)`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderTimeline() {
+    const years = [...new Set(AppData.drugs.map(d => d.year))].sort();
+    const selector = document.getElementById('timeline-selector');
+    selector.innerHTML = years.map((year, index) => 
+        `<button data-year="${year}" class="timeline-year-btn px-4 py-2 rounded-md font-medium transition-colors duration-200 ${index === 0 ? 'bg-blue-500 text-white' : 'bg-white text-stone-600 hover:bg-blue-100'}">${year}</button>`
+    ).join('');
+
+    selector.addEventListener('click', e => {
+        if (e.target.classList.contains('timeline-year-btn')) {
+            document.querySelectorAll('.timeline-year-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-500', 'text-white');
+                btn.classList.add('bg-white', 'text-stone-600', 'hover:bg-blue-100');
+            });
+            e.target.classList.add('bg-blue-500', 'text-white');
+            e.target.classList.remove('bg-white', 'text-stone-600', 'hover:bg-blue-100');
+            renderTimelineContent(e.target.dataset.year);
+        }
+    });
+    
+    if (years.length > 0) {
+        renderTimelineContent(years[0]);
+    } else {
+        document.getElementById('timeline-content').innerHTML = '<p class="text-center text-stone-500 col-span-full">No entries found for this timeline.</p>';
+    }
+}
+
+function renderTimelineContent(year) {
+    const content = document.getElementById('timeline-content');
+    const filteredDrugs = AppData.drugs.filter(d => d.year == year);
+    if(filteredDrugs.length > 0) {
+        content.innerHTML = filteredDrugs.map(drug => createDrugCard(drug)).join('');
+    } else {
+        content.innerHTML = '<p class="text-center text-stone-500 col-span-full">No entries found for this year.</p>';
+    }
+}
+
+function renderCompetitors() {
+    const competitors = [...new Set(AppData.drugs.flatMap(d => d.potentialMakers))].sort();
+    const select = document.getElementById('competitor-select');
+    select.innerHTML = competitors.map(c => `<option value="${c}">${c}</option>`).join('');
+
+    select.addEventListener('change', e => {
+        renderCompetitorContent(e.target.value);
+    });
+    
+    if (competitors.length > 0) {
+        renderCompetitorContent(competitors[0]);
+    } else {
+        document.getElementById('competitor-content').innerHTML = '<p class="text-center text-stone-500">No competitors found.</p>';
+        select.innerHTML = '<option>No competitors found</option>';
+    }
+}
+
+function renderCompetitorContent(competitor) {
+    const content = document.getElementById('competitor-content');
+    const targetedDrugs = AppData.drugs.filter(d => d.potentialMakers.includes(competitor));
+    content.innerHTML = `
+        <div class="bg-white p-6 rounded-xl shadow-sm">
+            <h3 class="text-xl font-bold text-blue-600">${competitor}</h3>
+            <p class="text-stone-500 mt-1 mb-6">Targeting ${targetedDrugs.length} upcoming patent expiries:</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                ${targetedDrugs.map(drug => createDrugCard(drug)).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function createDrugCard(drug) {
+    const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/search_product.cfm?trade_name=${encodeURIComponent(drug.brand)}`;
+    const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(drug.ingredient)}`;
+    
+    return `
+        <div class="bg-white border border-stone-200 p-5 rounded-xl hover:shadow-lg hover:border-blue-400 transition-all duration-300 flex flex-col h-full">
+            <div class="flex-grow cursor-pointer" onclick="showModal('${drug.brand}', 'details')">
+                <span class="text-xs font-semibold uppercase px-2 py-1 rounded-full ${drug.type === 'Generic' ? 'bg-amber-100 text-amber-800' : 'bg-teal-100 text-teal-800'}">${drug.type}</span>
+                <a href="${orangeBookUrl}" target="_blank" class="block mt-3 hover:text-blue-600" onclick="event.stopPropagation()">
+                    <h4 class="text-lg font-bold text-stone-800 hover:underline">${drug.brand}</h4>
+                </a>
+                <a href="${wikipediaUrl}" target="_blank" class="text-sm text-blue-500 hover:underline" onclick="event.stopPropagation()">
+                    ${drug.ingredient}
+                </a>
+                <p class="text-sm text-stone-600 mt-2">${drug.indication}</p>
+            </div>
+            <div class="mt-4 pt-4 border-t border-stone-200 flex justify-end gap-2">
+                 <button onclick="showModal('${drug.brand}', 'form')" class="text-sm text-gray-500 hover:text-blue-600 font-medium p-2 rounded-md hover:bg-gray-100">Edit</button>
+                 <button onclick="deleteDrug('${drug.brand}')" class="text-sm text-gray-500 hover:text-red-600 font-medium p-2 rounded-md hover:bg-gray-100">Delete</button>
+            </div>
+        </div>
+    `;
+}
+
+function deleteDrug(brand) {
+    const originalIndex = ORIGINAL_DB.drugs.findIndex(d => d.brand === brand);
+    if (originalIndex > -1) {
+        ORIGINAL_DB.drugs.splice(originalIndex, 1);
+        handleSearch();
+    }
+}
+
+function saveDrug(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    const originalBrand = formData.get('originalBrand');
+    
+    const newDrugData = {
+        year: parseInt(formData.get('year')),
+        brand: formData.get('brand'),
+        ingredient: formData.get('ingredient'),
+        type: formData.get('type'),
+        indication: formData.get('indication'),
+        analysis: formData.get('analysis'),
+        potentialMakers: formData.get('potentialMakers').split(',').map(m => m.trim()).filter(Boolean)
+    };
+
+    if (originalBrand) {
+        const originalIndex = ORIGINAL_DB.drugs.findIndex(d => d.brand === originalBrand);
+        if (originalIndex > -1) {
+            ORIGINAL_DB.drugs[originalIndex] = newDrugData;
+        }
+    } else {
+        ORIGINAL_DB.drugs.push(newDrugData);
+    }
+    
+    hideModal();
+    handleSearch();
+}
+
+function setupModal() {
+    const modal = document.getElementById('modal');
+    modal.addEventListener('click', (e) => {
+        if (e.target.id === 'modal') {
+            hideModal();
+        }
+    });
+}
+
+function showModal(brand, mode) {
+    const modal = document.getElementById('modal');
+    const modalContent = document.getElementById('modal-content');
+    
+    if (mode === 'details') {
+        const drug = AppData.drugs.find(d => d.brand === brand);
+        if (!drug) return;
+        
+        const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/search_product.cfm?trade_name=${encodeURIComponent(drug.brand)}`;
+        const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(drug.ingredient)}`;
+
+        modalContent.innerHTML = `
+            <div class="flex justify-between items-start">
+                <div>
+                    <a href="${orangeBookUrl}" target="_blank" class="text-2xl sm:text-3xl font-bold text-stone-900 hover:underline">${drug.brand}</a>
+                    <br>
+                    <a href="${wikipediaUrl}" target="_blank" class="text-blue-500 hover:underline">${drug.ingredient}</a>
+                </div>
+                <button onclick="hideModal()" class="text-stone-400 hover:text-stone-600 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="mt-6 space-y-5">
+                <div><h4 class="font-semibold text-stone-700">Expiry Year</h4><p class="text-stone-600">${drug.year}</p></div>
+                <div><h4 class="font-semibold text-stone-700">Indication(s)</h4><p class="text-stone-600">${drug.indication}</p></div>
+                <div><h4 class="font-semibold text-stone-700">Market Analysis</h4><p class="text-stone-600 leading-relaxed">${drug.analysis}</p></div>
+                <div><h4 class="font-semibold text-stone-700">Potential ${drug.type} Makers</h4><div class="flex flex-wrap gap-2 mt-2">${drug.potentialMakers.map(maker => `<span class="bg-stone-100 text-stone-700 text-sm font-medium px-3 py-1 rounded-full">${maker}</span>`).join('')}</div></div>
+            </div>
+            <div class="mt-8 text-right"><button onclick="hideModal()" class="bg-stone-200 text-stone-700 font-medium px-4 py-2 rounded-lg hover:bg-stone-300 transition-colors">Close</button></div>
+        `;
+    } else if (mode === 'form') {
+        const drug = brand ? ORIGINAL_DB.drugs.find(d => d.brand === brand) : null;
+        const isEditing = !!drug;
+        modalContent.innerHTML = `
+            <div class="flex justify-between items-center"><h2 class="text-2xl font-bold">${isEditing ? 'Edit Entry' : 'Add New Entry'}</h2><button onclick="hideModal()" class="text-stone-400 hover:text-stone-600 transition-colors"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button></div>
+            <form id="drug-form" onsubmit="saveDrug(event)" class="mt-6 space-y-4">
+                <input type="hidden" name="originalBrand" value="${isEditing ? drug.brand : ''}">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div><label class="block text-sm font-medium">Brand Name</label><input required name="brand" value="${isEditing ? drug.brand : ''}" class="mt-1 w-full p-2 border rounded"></div>
+                    <div><label class="block text-sm font-medium">Active Ingredient</label><input required name="ingredient" value="${isEditing ? drug.ingredient : ''}" class="mt-1 w-full p-2 border rounded"></div>
+                    <div><label class="block text-sm font-medium">Expiry Year</label><input required type="number" name="year" value="${isEditing ? drug.year : ''}" class="mt-1 w-full p-2 border rounded"></div>
+                    <div><label class="block text-sm font-medium">Type</label><select name="type" class="mt-1 w-full p-2 border rounded bg-white"><option ${isEditing && drug.type === 'Generic' ? 'selected' : ''}>Generic</option><option ${isEditing && drug.type === 'Biosimilar' ? 'selected' : ''}>Biosimilar</option></select></div>
+                </div>
+                <div><label class="block text-sm font-medium">Indication(s)</label><input required name="indication" value="${isEditing ? drug.indication : ''}" class="mt-1 w-full p-2 border rounded"></div>
+                <div><label class="block text-sm font-medium">Market Analysis</label><textarea name="analysis" rows="3" class="mt-1 w-full p-2 border rounded">${isEditing ? drug.analysis : ''}</textarea></div>
+                <div><label class="block text-sm font-medium">Potential Makers (comma-separated)</label><input required name="potentialMakers" value="${isEditing ? drug.potentialMakers.join(', ') : ''}" class="mt-1 w-full p-2 border rounded"></div>
+                <div class="flex justify-end gap-3 pt-4"><button type="button" onclick="hideModal()" class="bg-stone-200 text-stone-700 font-medium px-4 py-2 rounded-lg hover:bg-stone-300">Cancel</button><button type="submit" class="bg-blue-500 text-white font-medium px-4 py-2 rounded-lg hover:bg-blue-600">Save</button></div>
+            </form>
+        `;
+    }
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    setTimeout(() => {
+        modal.classList.add('opacity-100');
+        modal.querySelector('.transform').classList.remove('scale-95');
+        modal.querySelector('.transform').classList.add('scale-100');
+    }, 10);
+}
+
+function hideModal() {
+    const modal = document.getElementById('modal');
+    modal.classList.remove('opacity-100');
+    modal.querySelector('.transform').classList.remove('scale-100');
+    modal.querySelector('.transform').classList.add('scale-95');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }, 300);
+}
+
+</script>
+</body>
+</html>
+
+
