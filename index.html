@@ -589,7 +589,7 @@ function renderCompetitorContent(competitor) {
 }
 
 function createDrugCard(drug) {
-    const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/search_product.cfm?trade_name=${encodeURIComponent(drug.brand)}`;
+    const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/index.cfm`;
     const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(drug.ingredient)}`;
     
     return `
@@ -666,7 +666,7 @@ function showModal(brand, mode) {
         const drug = AppData.drugs.find(d => d.brand === brand);
         if (!drug) return;
         
-        const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/search_product.cfm?trade_name=${encodeURIComponent(drug.brand)}`;
+        const orangeBookUrl = `https://www.accessdata.fda.gov/scripts/cder/ob/index.cfm`;
         const wikipediaUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(drug.ingredient)}`;
 
         modalContent.innerHTML = `
